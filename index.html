@@ -1,13 +1,311 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React + TS</title>
+    <title>Drag and Drop Cards with Bulb Spotlight</title>
+    <style>
+      body {
+        display: flex;
+        justify-content: center;
+        gap: 40px;
+        padding: 40px;
+        height: 100vh;
+        margin: 0;
+        overflow: hidden;
+        user-select: none;
+      }
+      .column {
+        width: 300px;
+        padding: 20px 0px;
+        border-radius: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+        max-height: 80vh;
+        overflow-y: auto;
+        position: relative;
+        border: 2px dashed #d4cece;
+        display: flex;
+        align-items: center;
+      }
+      .card {
+        border-radius: 6px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: grab;
+        user-select: none;
+        box-sizing: border-box;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .card.dragging {
+        cursor: grabbing;
+        z-index: 1000;
+      }
+      .placeholder {
+        background: rgba(104, 170, 247, 0.3);
+        border-radius: 6px;
+        transition: all 0.2s ease;
+      }
+      .dark-overlay {
+        pointer-events: none;
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.8);
+        mask-image: radial-gradient(
+          circle 240px at var(--x) var(--y),
+          transparent 65%,
+          black 90%
+        );
+        -webkit-mask-image: radial-gradient(
+          circle 240px at var(--x) var(--y),
+          transparent 65%,
+          black 90%
+        );
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        z-index: 999;
+      }
+      .dark-overlay.active {
+        opacity: 1;
+      }
+
+      .original-placeholder {
+        visibility: hidden;
+        height: 0;
+        overflow: hidden;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div id="col-1" class="column"></div>
+    <div id="col-2" class="column"></div>
+    <div class="dark-overlay"></div>
+
+    <script>
+      const col1 = document.getElementById("col-1");
+      const col2 = document.getElementById("col-2");
+      const overlay = document.querySelector(".dark-overlay");
+
+      let draggedCard = null;
+      let originalCol = null;
+      let originalIndex = null;
+      let dropTarget = null;
+      let placeholder = null;
+      let originalPlaceholder = null;
+      let hasMoved = false;
+      let startX = 0;
+      let startY = 0;
+      let offsetX = 0;
+      let offsetY = 0;
+
+      function randomColor() {
+        return `hsla(${Math.random() * 360}, 50%, 50%, 0.5)`;
+      }
+
+      function createCard(id) {
+        const color = randomColor();
+        const height = 40 + Math.random() * 100;
+
+        const card = document.createElement("div");
+        card.className = "card";
+        card.textContent = `${id}`;
+        card.style.background = color;
+        card.style.border = `1px solid ${color}`;
+        card.style.height = height + "px";
+        card.style.width = "260px";
+        card.dataset.fixedHeight = height;
+        card.dataset.fixedWidth = 260;
+        card.draggable = false;
+        card.addEventListener("mousedown", startDrag);
+        return card;
+      }
+
+      // Initialize with 4 cards each
+      for (let i = 1; i <= 4; i++) col1.appendChild(createCard(i));
+      for (let i = 5; i <= 8; i++) col2.appendChild(createCard(i));
+
+      function startDrag(e) {
+        if (e.button !== 0) return; // Only left mouse button
+
+        draggedCard = e.target.closest(".card");
+        if (!draggedCard) return;
+
+        originalCol = draggedCard.parentElement;
+        originalIndex = [...originalCol.children].indexOf(draggedCard);
+        hasMoved = false;
+
+        startX = e.pageX;
+        startY = e.pageY;
+
+        // Mouse offset inside card
+        const rect = draggedCard.getBoundingClientRect();
+        offsetX = e.pageX - rect.left;
+        offsetY = e.pageY - rect.top;
+
+        // Lock fixed width and height
+        draggedCard.style.width = draggedCard.dataset.fixedWidth + "px";
+        draggedCard.style.height = draggedCard.dataset.fixedHeight + "px";
+
+        e.preventDefault();
+
+        document.addEventListener("mousemove", moveDrag);
+        document.addEventListener("mouseup", endDrag);
+      }
+
+      function moveDrag(e) {
+        if (!hasMoved) {
+          const dx = Math.abs(e.pageX - startX);
+          const dy = Math.abs(e.pageY - startY);
+          if (dx > 5 || dy > 5) {
+            hasMoved = true;
+
+            // Create invisible placeholder in original position
+            originalPlaceholder = document.createElement("div");
+            originalPlaceholder.className = "original-placeholder";
+            originalPlaceholder.style.height =
+              draggedCard.dataset.fixedHeight + "px";
+            originalCol.insertBefore(originalPlaceholder, draggedCard);
+
+            // Prepare card for dragging
+            draggedCard.classList.add("dragging");
+            const rect = draggedCard.getBoundingClientRect();
+            draggedCard.style.position = "fixed";
+            draggedCard.style.left = rect.left + "px";
+            draggedCard.style.top = rect.top + "px";
+            draggedCard.style.pointerEvents = "none";
+            document.body.appendChild(draggedCard);
+
+            overlay.classList.add("active");
+          } else {
+            return;
+          }
+        }
+
+        draggedCard.style.left = e.pageX - offsetX + "px";
+        draggedCard.style.top = e.pageY - offsetY + "px";
+
+        overlay.style.setProperty("--x", e.pageX + "px");
+        overlay.style.setProperty("--y", e.pageY + "px");
+
+        // Determine drop target (only in other column)
+        const otherCol = originalCol.id === "col-1" ? col2 : col1;
+        dropTarget = null;
+        if (placeholder) placeholder.remove();
+
+        const columnRect = otherCol.getBoundingClientRect();
+
+        // Check if mouse is within the other column
+        if (
+          e.clientX >= columnRect.left &&
+          e.clientX <= columnRect.right &&
+          e.clientY >= columnRect.top &&
+          e.clientY <= columnRect.bottom
+        ) {
+          const cards = [...otherCol.querySelectorAll(".card:not(.dragging)")];
+
+          // Empty column case
+          if (cards.length === 0) {
+            createPlaceholder(otherCol, 0);
+            dropTarget = { col: otherCol, index: 0 };
+            return;
+          }
+
+          const rects = cards.map((c) => c.getBoundingClientRect());
+
+          // Check before first card
+          if (e.clientY < rects[0].top + rects[0].height / 3) {
+            createPlaceholder(otherCol, 0);
+            dropTarget = { col: otherCol, index: 0 };
+            return;
+          }
+
+          // Check between cards
+          for (let i = 0; i < rects.length - 1; i++) {
+            if (
+              e.clientY > rects[i].bottom - rects[i].height / 3 &&
+              e.clientY < rects[i + 1].top + rects[i + 1].height / 3
+            ) {
+              createPlaceholder(otherCol, i + 1);
+              dropTarget = { col: otherCol, index: i + 1 };
+              return;
+            }
+          }
+
+          // Check after last card
+          if (
+            e.clientY >
+            rects[rects.length - 1].bottom - rects[rects.length - 1].height / 3
+          ) {
+            createPlaceholder(otherCol, cards.length);
+            dropTarget = { col: otherCol, index: cards.length };
+            return;
+          }
+        }
+      }
+
+      function createPlaceholder(col, index) {
+        placeholder = document.createElement("div");
+        placeholder.className = "placeholder";
+        placeholder.style.height = draggedCard.dataset.fixedHeight + "px";
+        placeholder.style.width = draggedCard.dataset.fixedWidth + "px";
+        const targetCard = col.children[index];
+        if (targetCard) {
+          col.insertBefore(placeholder, targetCard);
+        } else {
+          col.appendChild(placeholder);
+        }
+      }
+
+      function endDrag() {
+        document.removeEventListener("mousemove", moveDrag);
+        document.removeEventListener("mouseup", endDrag);
+
+        overlay.classList.remove("active");
+
+        if (hasMoved && dropTarget) {
+          // Remove placeholders
+          if (placeholder) placeholder.remove();
+          if (originalPlaceholder) originalPlaceholder.remove();
+
+          // Move the card to new position
+          dropTarget.col.insertBefore(
+            draggedCard,
+            dropTarget.col.children[dropTarget.index] || null
+          );
+        } else {
+          // Return to original position
+          if (originalPlaceholder) {
+            originalCol.insertBefore(draggedCard, originalPlaceholder);
+            originalPlaceholder.remove();
+          } else {
+            originalCol.insertBefore(
+              draggedCard,
+              originalCol.children[originalIndex] || null
+            );
+          }
+        }
+
+        // Reset styles
+        draggedCard.classList.remove("dragging");
+        draggedCard.style.position = "";
+        draggedCard.style.left = "";
+        draggedCard.style.top = "";
+        draggedCard.style.pointerEvents = "";
+        draggedCard.style.width = draggedCard.dataset.fixedWidth + "px";
+        draggedCard.style.height = draggedCard.dataset.fixedHeight + "px";
+        draggedCard.style.transform = "";
+        draggedCard.style.boxShadow = "";
+
+        // Clean up
+        if (placeholder) placeholder.remove();
+        if (originalPlaceholder) originalPlaceholder.remove();
+        placeholder = null;
+        originalPlaceholder = null;
+        draggedCard = null;
+        dropTarget = null;
+      }
+    </script>
   </body>
 </html>
